@@ -14,10 +14,10 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sstream>
-#include "Graph.hpp"
-#include "KruskalMST.hpp"
-#include "PrimMST.hpp"
-#include "Tree.hpp"
+#include "../src/hpp files/Graph.hpp"
+#include "../src/hpp files/KruskalMST.hpp"
+#include "../src/hpp files/PrimMST.hpp"
+#include "../src/hpp files/Tree.hpp"
 
 using namespace std;
 
