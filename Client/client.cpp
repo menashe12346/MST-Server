@@ -7,29 +7,28 @@
 using namespace std;
 
 /// @brief Sends a command to the server.
-/// @param socket The socket of the server.
-/// @param command The command to send to the server.
 void sendCommand(int socket, const string& command) {
+    // Send the command to the server using the provided socket
     if (write(socket, command.c_str(), command.size()) < 0) {
-        cerr << "Error writing to socket" << endl;
+        cerr << "Error writing to socket" << endl; // Error handling
     }
 }
 
 /// @brief Receives a response from the server and prints it to the console.
-/// @param socket The socket of the server.
 void receiveResponse(int socket) {
     char buffer[1024];
-    bzero(buffer, 1024);
-    int n = read(socket, buffer, 1023);
+    bzero(buffer, 1024); // Clear the buffer
+    int n = read(socket, buffer, 1023); // Read response from the server
     if (n < 0) {
-        cerr << "Error reading from socket" << endl;
+        cerr << "Error reading from socket" << endl; // Error handling
     } else {
-        cout << buffer;
+        cout << buffer; // Print the server's response to the console
     }
 }
 
 /// @brief Prints a help message with available commands and their descriptions.
 void printHelp() {
+    // Help message listing all available commands with their usage
     cout << "\nAvailable commands:\n"
          << "NewGraph n m\n"
          << "  - Create a new graph with n vertices and m edges\n"
@@ -77,50 +76,54 @@ void printHelp() {
 }
 
 int main() {
-    int sockfd, portno = 9034; // the port of the server
-    struct sockaddr_in serv_addr;
+    int sockfd, portno = 9034; // Port number of the server
+    struct sockaddr_in serv_addr; // Struct to hold server address information
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(AF_INET, SOCK_STREAM, 0); // Create a TCP socket
     if (sockfd < 0) {
-        cerr << "Error opening socket" << endl;
+        cerr << "Error opening socket" << endl; // Error handling if socket creation fails
         return 1;
     }
 
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = inet_addr("127.0.0.1"); // Use localhost for testing
-    serv_addr.sin_port = htons(portno); // Convert the port into big-endian
+    serv_addr.sin_port = htons(portno); // Convert the port number to network byte order (big-endian)
 
+    // Attempt to connect to the server
     if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
-        cerr << "Error connecting" << endl;
+        cerr << "Error connecting" << endl; // Error handling if connection fails
         return 1;
     }
 
+    // Main loop to continuously accept commands from the user
     while (true) {
         cout << "Enter command (NewGraph, NewEdge, RemoveEdge, Kruskal, Prim, MSTWeight, LongestDistance, AverageDistance, ShortestPath, PrintGraph, help, exit): ";
         string command;
-        getline(cin, command);
+        getline(cin, command); // Read the user's input
 
+        // If the user asks for help, display the help message
         if (command == "help") {
             printHelp();
             continue;
         }
 
-        sendCommand(sockfd, command + "\n");
-        receiveResponse(sockfd);
-        if (command == "exit") break;
+        sendCommand(sockfd, command + "\n"); // Send the user command to the server
+        receiveResponse(sockfd); // Receive and print the server's response
+        if (command == "exit") break; // Exit the loop if the user types "exit"
 
+        // If the command is NewGraph, take additional input for the edges
         if (command.find("NewGraph") == 0) {
             int n, m;
-            sscanf(command.c_str(), "NewGraph %d %d", &n, &m);
+            sscanf(command.c_str(), "NewGraph %d %d", &n, &m); // Extract n and m from the command
             for (int i = 0; i < m; ++i) {
                 cout << "Enter edge " << i + 1 << " (format: u v weight): ";
-                getline(cin, command);
-                sendCommand(sockfd, command + "\n");
-                receiveResponse(sockfd);
+                getline(cin, command); // Read each edge
+                sendCommand(sockfd, command + "\n"); // Send each edge to the server
+                receiveResponse(sockfd); // Receive and print the server's response for each edge
             }
         }
     }
 
-    close(sockfd);
+    close(sockfd); // Close the socket when done
     return 0;
 }
