@@ -164,16 +164,18 @@ void processCommand(const Command& cmd) {
             if (mstTree) {
                 double distance = mstTree->longestDistance(u, v);
                 if (distance >= 0) {
+                    response = "Longest Distance between " + to_string(u) + " and " + to_string(v) + " is: " + to_string(distance) + "\n";
+                    
+                    // Get the longest path
                     std::vector<int> path = mstTree->getLongestPath(u, v);
                     stringstream ss;
-                    ss << "Longest Distance between " + to_string(u) + " and " + to_string(v) + " is: " + to_string(distance) + "\n";
                     ss << "Longest path: ";
                     for (size_t i = 0; i < path.size(); ++i) {
                         ss << path[i];
                         if (i < path.size() - 1) ss << " -> ";
                     }
                     ss << "\n";
-                    response = ss.str();
+                    response += ss.str();
                 } else {
                     response = "No path exists between the vertices.\n";
                 }
@@ -187,25 +189,25 @@ void processCommand(const Command& cmd) {
         int u, v;
         if (sscanf(command.c_str(), "AverageDistance %d %d", &u, &v) == 2) {
             if (mstTree) {
-                double avgDistance = mstTree->averageDistance();
-                stringstream ss;
-                ss << "Average Distance between all pairs of vertices: " << avgDistance << "\n";
-
-                // Get the paths between the requested vertices
                 auto [dist, next] = mstTree->floydWarshall();
+                double distance = dist[u][v];
+                
+                if (distance < std::numeric_limits<double>::infinity()) {
+                    response = "Shortest Distance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
 
-                if (u >= 1 && v >= 1 && u <= graph->getNumNodes() && v <= graph->getNumNodes()) {
-                    if (dist[u][v] < std::numeric_limits<double>::infinity()) {
-                        std::vector<int> path;
-                        mstTree->reconstructPath(u, v, next, path);
-                        ss << " (Distance: " << dist[u][v] << ")\n";
-                    } else {
-                        ss << "No path exists between " + to_string(u) + " and " + to_string(v) + ".\n";
+                    // Reconstruct the path and print it
+                    std::vector<int> path;
+                    mstTree->reconstructPath(u, v, next, path);
+
+                    response += "Path from " + to_string(u) + " to " + to_string(v) + ": ";
+                    for (size_t i = 0; i < path.size(); ++i) {
+                        response += to_string(path[i]);
+                        if (i < path.size() - 1) response += " -> ";
                     }
+                    response += "\n";
                 } else {
-                    ss << "Invalid vertex range.\n";
+                    response = "No path exists between " + to_string(u) + " and " + to_string(v) + ".\n";
                 }
-                response = ss.str();
             } else {
                 response = "MST not calculated. Run Prim or Kruskal first.\n";
             }
