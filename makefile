@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -Wextra -pedantic -g
+CXXFLAGS = -std=c++17 -Wall -Wextra -pedantic -g -fprofile-arcs -ftest-coverage
 LDFLAGS = -lpthread # for POSIX threads
 
 # Define paths for directories
@@ -48,6 +48,7 @@ ThreadPool.o: $(SRCDIR_CPP)/ThreadPool.cpp $(SRCDIR_HPP)/ThreadPool.hpp
 
 Tree.o: $(SRCDIR_CPP)/Tree.cpp $(SRCDIR_HPP)/Tree.hpp
 	$(CXX) $(CXXFLAGS) -c $(SRCDIR_CPP)/Tree.cpp -o Tree.o
-
+	
+# Clean object files, executables, and coverage data
 clean:
-	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o
+	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o *.gcda *.gcno *.gcov
