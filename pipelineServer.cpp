@@ -185,15 +185,18 @@ void processCommand(const Command& cmd) {
         } else {
             response = "Invalid LongestDistance command format. Use: LongestDistance u v\n";
         }
-    } else if (command.find("AverageDistance") == 0) {
-        int u, v;
-        if (sscanf(command.c_str(), "AverageDistance %d %d", &u, &v) == 2) {
-            if (mstTree) {
+    }else if (command.find("AverageDistance") == 0) {
+    int u, v;
+    if (sscanf(command.c_str(), "AverageDistance %d %d", &u, &v) == 2) {
+        if (mstTree) {
+            if (u == v) {
+                response = "Distance between the same vertex (" + to_string(u) + ") is 0. No path needed.\n";
+            } else {
                 auto [dist, next] = mstTree->floydWarshall();
                 double distance = dist[u][v];
                 
                 if (distance < std::numeric_limits<double>::infinity()) {
-                    response = "Shortest Distance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
+                    response = "Average Distance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
 
                     // Reconstruct the path and print it
                     std::vector<int> path;
@@ -208,13 +211,43 @@ void processCommand(const Command& cmd) {
                 } else {
                     response = "No path exists between " + to_string(u) + " and " + to_string(v) + ".\n";
                 }
-            } else {
-                response = "MST not calculated. Run Prim or Kruskal first.\n";
             }
         } else {
-            response = "Invalid AverageDistance command format. Use: AverageDistance u v\n";
+            response = "MST not calculated. Run Prim or Kruskal first.\n";
         }
-    } else if (command.find("PrintGraph") == 0) {
+    } else {
+        response = "Invalid AverageDistance command format. Use: AverageDistance u v\n";
+    }
+} else if (command.find("ShortestPath") == 0) {
+    int u, v;
+    if (sscanf(command.c_str(), "ShortestPath %d %d", &u, &v) == 2) {
+        if (mstTree) {
+            auto [dist, next] = mstTree->floydWarshall();
+            double distance = dist[u][v];
+
+            if (distance < std::numeric_limits<double>::infinity()) {
+                response = "Shortest Distance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
+
+                // Reconstruct the path and return it
+                std::vector<int> path;
+                mstTree->reconstructPath(u, v, next, path);
+
+                response += "Path from " + to_string(u) + " to " + to_string(v) + ": ";
+                for (size_t i = 0; i < path.size(); ++i) {
+                    response += to_string(path[i]);
+                    if (i < path.size() - 1) response += " -> ";
+                }
+                response += "\n";
+            } else {
+                response = "No path exists between the vertices.\n";
+            }
+        } else {
+            response = "MST not calculated. Run Prim or Kruskal first.\n";
+        }
+    } else {
+        response = "Invalid ShortestPath command format. Use: ShortestPath u v\n";
+    }
+} else if (command.find("PrintGraph") == 0) {
         graphMutex.lock(); // Lock the graph mutex
         if (graph) {
             stringstream ss;

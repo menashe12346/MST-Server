@@ -10,7 +10,6 @@ using namespace std;
 /// @param socket The socket of the server.
 /// @param command The command to send to the server.
 void sendCommand(int socket, const string& command) {
-    // Writes the command to the specified socket. The command is converted to a C-style string using c_str().
     if (write(socket, command.c_str(), command.size()) < 0) {
         cerr << "Error writing to socket" << endl;
     }
@@ -20,12 +19,12 @@ void sendCommand(int socket, const string& command) {
 /// @param socket The socket of the server.
 void receiveResponse(int socket) {
     char buffer[1024];
-    bzero(buffer, 1024); // Clears the buffer.
-    int n = read(socket, buffer, 1023); // Reads from the socket into the buffer.
+    bzero(buffer, 1024);
+    int n = read(socket, buffer, 1023);
     if (n < 0) {
         cerr << "Error reading from socket" << endl;
     } else {
-        cout << buffer;  // Simply print whatever is received
+        cout << buffer;
     }
 }
 
@@ -59,9 +58,12 @@ void printHelp() {
          << "LongestDistance u v\n"
          << "  - Find the longest distance between two vertices u and v\n"
          << "  - Example: LongestDistance 1 3\n"
-         << "AverageDistance u v\n"
-         << "  - Calculate average distance between all pairs\n"
-         << "  - Example: AverageDistance 1 3\n"
+         << "AverageDistance\n"
+         << "  - Calculate the average distance of all paths in the MST\n"
+         << "  - Example: AverageDistance\n"
+         << "ShortestPath u v\n"
+         << "  - Find the shortest path between two vertices u and v\n"
+         << "  - Example: ShortestPath 1 3\n"
          << "PrintGraph\n"
          << "  - Print the current graph\n"
          << "  - Example: PrintGraph\n"
@@ -94,9 +96,9 @@ int main() {
     }
 
     while (true) {
-        cout << "Enter command (NewGraph, NewEdge, RemoveEdge, Kruskal, Prim, MSTWeight, LongestDistance, AverageDistance, PrintGraph, help, exit): ";
+        cout << "Enter command (NewGraph, NewEdge, RemoveEdge, Kruskal, Prim, MSTWeight, LongestDistance, AverageDistance, ShortestPath, PrintGraph, help, exit): ";
         string command;
-        getline(cin, command); // Reads the entire input line into the command string.
+        getline(cin, command);
 
         if (command == "help") {
             printHelp();
@@ -121,5 +123,4 @@ int main() {
 
     close(sockfd);
     return 0;
-
 }

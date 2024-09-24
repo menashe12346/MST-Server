@@ -8,16 +8,21 @@ Tree::Tree(int n, const std::vector<std::pair<std::pair<int, int>, double>>& edg
     : Graph(n, edges) {
     for (const auto& edge : edges) {
         addEdge(edge.first.first, edge.first.second, edge.second);
-        addEdge(edge.first.second, edge.first.first, edge.second); // Undirected graph, add reverse edge
+        addEdge(edge.first.second, edge.first.first, edge.second); // Undirected graph
     }
 }
 
 double Tree::getMSTWeight() const {
     double totalWeight = 0;
     for (const auto& edge : getEdges()) {
-        totalWeight += edge.second; // Sum up the weights of all edges
+        totalWeight += edge.second;
     }
     return totalWeight;
+}
+
+double Tree::shortestDistance(int u, int v) {
+    auto [dist, next] = floydWarshall(); // Using Floyd-Warshall to calculate distances
+    return dist[u][v];
 }
 
 void Tree::dfs(int current, int parent, double currentWeight, int target, double &maxWeight, bool &found, std::vector<int>& currentPath, std::vector<int>& bestPath) {
@@ -25,34 +30,34 @@ void Tree::dfs(int current, int parent, double currentWeight, int target, double
     if (current == target) {
         if (currentWeight > maxWeight) {
             maxWeight = currentWeight;
-            bestPath = currentPath; // Store the path
+            bestPath = currentPath;
         }
         found = true;
     }
 
     for (const auto& neighbor : getAdjacencyList()[current]) {
-        if (neighbor.first != parent) { // Avoid going back to parent
+        if (neighbor.first != parent) {
             dfs(neighbor.first, current, currentWeight + neighbor.second, target, maxWeight, found, currentPath, bestPath);
-            if (found) return; // Stop if target is found
+            if (found) return;
         }
     }
 
-    currentPath.pop_back(); // Backtrack
+    currentPath.pop_back();
 }
 
 double Tree::longestDistance(int u, int v) {
     double maxWeight = 0;
     bool found = false;
     std::vector<int> currentPath, bestPath;
-    dfs(u, -1, 0, v, maxWeight, found, currentPath, bestPath); // Start DFS from u to find v
+    dfs(u, -1, 0, v, maxWeight, found, currentPath, bestPath);
 
-    longestPath = bestPath; // Store the longest path found
-    return found ? maxWeight : -1; // Return -1 if v is not reachable from u
+    longestPath = bestPath;
+    return found ? maxWeight : -1;
 }
 
 std::vector<int> Tree::getLongestPath(int u, int v) {
-    longestDistance(u, v); // First, calculate the longest distance
-    return longestPath; // Return the stored longest path
+    longestDistance(u, v);
+    return longestPath;
 }
 
 std::pair<std::vector<std::vector<double>>, std::vector<std::vector<int>>> Tree::floydWarshall() {
