@@ -1,6 +1,6 @@
-#include "MSTFactory.hpp"
-#include "KruskalMST.hpp"
-#include "PrimMST.hpp"
+#include "../hpp_files/MSTFactory.hpp"
+#include "../hpp_files/KruskalMST.hpp"
+#include "../hpp_files/PrimMST.hpp"
 
 std::unique_ptr<KruskalMST> MSTFactory::createKruskalMST(Graph& g) {
     return std::make_unique<KruskalMST>(g);

@@ -1,4 +1,4 @@
-#include "KruskalMST.hpp"
+#include "../hpp_files/KruskalMST.hpp"
 #include <algorithm>
 #include <numeric>
 

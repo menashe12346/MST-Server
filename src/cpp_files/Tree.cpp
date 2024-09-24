@@ -1,4 +1,4 @@
-#include "Tree.hpp"
+#include "../hpp_files/Tree.hpp"
 #include <vector>
 #include <algorithm>
 #include <limits>
@@ -95,35 +95,4 @@ void Tree::reconstructPath(int u, int v, const std::vector<std::vector<int>>& ne
         u = next[u][v];
         path.push_back(u);
     }
-}
-
-double Tree::averageDistance() {
-    int n = getNumNodes();
-    auto [dist, next] = floydWarshall();
-
-    double totalDistance = 0;
-    int count = 0;
-
-    std::cout << "Paths between all pairs of vertices:\n";
-
-    for (int i = 1; i <= n; ++i) {
-        for (int j = i + 1; j <= n; ++j) {
-            if (dist[i][j] < std::numeric_limits<double>::infinity()) {
-                totalDistance += dist[i][j];
-                ++count;
-
-                std::vector<int> path;
-                reconstructPath(i, j, next, path);
-
-                std::cout << "Path from " << i << " to " << j << ": ";
-                for (size_t k = 0; k < path.size(); ++k) {
-                    std::cout << path[k];
-                    if (k < path.size() - 1) std::cout << " -> ";
-                }
-                std::cout << " (Distance: " << dist[i][j] << ")\n";
-            }
-        }
-    }
-
-    return (count > 0) ? totalDistance / count : -1;
 }

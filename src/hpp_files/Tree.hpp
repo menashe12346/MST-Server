@@ -10,8 +10,7 @@ public:
 
     double getMSTWeight() const;
     double longestDistance(int u, int v);
-    double averageDistance();
-    double shortestDistance(int u, int v); // Added function for shortest distance
+    double shortestDistance(int u, int v);
 
     std::vector<int> getLongestPath(int u, int v);
 

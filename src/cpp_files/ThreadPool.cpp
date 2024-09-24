@@ -1,4 +1,4 @@
-#include "ThreadPool.hpp"
+#include "../hpp_files/ThreadPool.hpp"
 
 // Constructor
 ThreadPool::ThreadPool(size_t numThreads) : stopFlag(false) {
