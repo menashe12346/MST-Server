@@ -21,13 +21,13 @@ LFServer: $(SERVERS_DIR)/LFServer.o Graph.o KruskalMST.o PrimMST.o ThreadPool.o 
 	$(CXX) $(CXXFLAGS) -o $(SERVERS_DIR)/LFServer $(SERVERS_DIR)/LFServer.o Graph.o KruskalMST.o PrimMST.o ThreadPool.o Tree.o $(LDFLAGS)
 
 # Object file rules
-$(SERVERS_DIR)/LFServer.o: $(SERVERS_DIR)/LFServer.cpp
+$(SERVERS_DIR)/LFServer.o: $(SERVERS_DIR)/LFServer.cpp $(SRCDIR_HPP)/Graph.hpp
 	$(CXX) $(CXXFLAGS) -c $(SERVERS_DIR)/LFServer.cpp -o $(SERVERS_DIR)/LFServer.o
 
-$(SERVERS_DIR)/pipelineServer.o: $(SERVERS_DIR)/pipelineServer.cpp
+$(SERVERS_DIR)/pipelineServer.o: $(SERVERS_DIR)/pipelineServer.cpp $(SRCDIR_HPP)/Graph.hpp
 	$(CXX) $(CXXFLAGS) -c $(SERVERS_DIR)/pipelineServer.cpp -o $(SERVERS_DIR)/pipelineServer.o
 
-$(CLIENT_DIR)/client.o: $(CLIENT_DIR)/client.cpp
+$(CLIENT_DIR)/client.o: $(CLIENT_DIR)/client.cpp $(SRCDIR_HPP)/Graph.hpp
 	$(CXX) $(CXXFLAGS) -c $(CLIENT_DIR)/client.cpp -o $(CLIENT_DIR)/client.o
 
 # Compile cpp files from src/cpp_files
@@ -51,4 +51,6 @@ Tree.o: $(SRCDIR_CPP)/Tree.cpp $(SRCDIR_HPP)/Tree.hpp
 	
 # Clean object files, executables, and coverage data
 clean:
-	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o *.gcda *.gcno *.gcov
+	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o
+	rm -f $(CLIENT_DIR)/*.o
+	rm -f $(SERVERS_DIR)/*.o
