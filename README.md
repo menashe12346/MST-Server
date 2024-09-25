@@ -98,7 +98,7 @@ make valgrind_LFServer
 This will run Valgrind with the `--leak-check=full` option and automatically handle both the server and client processes.
 
 Example output of Valgrind for `LFServer`:
-![Valgrind Example](path/to/your/screenshot.png)
+![צילום מסך 2024-09-25 163512](https://github.com/user-attachments/assets/7373a2a5-f378-4233-8469-1cd4436c8873)
 
 ### Code Coverage
 
