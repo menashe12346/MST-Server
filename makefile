@@ -48,9 +48,27 @@ ThreadPool.o: $(SRCDIR_CPP)/ThreadPool.cpp $(SRCDIR_HPP)/ThreadPool.hpp
 
 Tree.o: $(SRCDIR_CPP)/Tree.cpp $(SRCDIR_HPP)/Tree.hpp
 	$(CXX) $(CXXFLAGS) -c $(SRCDIR_CPP)/Tree.cpp -o Tree.o
-	
+
+# Valgrind test for pipelineServer
+valgrind_pipelineServer:
+	-killall pipelineServer || true # Ensure no previous server is running
+	valgrind --leak-check=full $(SERVERS_DIR)/pipelineServer -v 5 -e 6 -s 42 & # Run pipelineServer
+	sleep 2 # Allow server to start
+	valgrind --leak-check=full $(CLIENT_DIR)/client -v 5 -e 6 -s 42 # Run client to communicate with the server
+	sleep 2 # Give time for client to complete communication
+	-killall pipelineServer || true # Stop pipelineServer if still running
+
+# Valgrind test for LFServer
+valgrind_LFServer:
+	-killall LFServer || true # Ensure no previous server is running
+	valgrind --leak-check=full $(SERVERS_DIR)/LFServer -v 5 -e 6 -s 42 & # Run LFServer
+	sleep 2 # Allow server to start
+	valgrind --leak-check=full $(CLIENT_DIR)/client -v 5 -e 6 -s 42 # Run client to communicate with the server
+	sleep 2 # Give time for client to complete communication
+	-killall LFServer || true # Stop LFServer if still running
+
 # Clean object files, executables, and coverage data
 clean:
-	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o
-	rm -f $(CLIENT_DIR)/*.o
-	rm -f $(SERVERS_DIR)/*.o
+	rm -f $(CLIENT_DIR)/client $(SERVERS_DIR)/pipelineServer $(SERVERS_DIR)/LFServer *.o *.gcda *.gcno *.gcov
+	rm -f $(CLIENT_DIR)/*.o $(CLIENT_DIR)/*.gcda $(CLIENT_DIR)/*.gcno $(CLIENT_DIR)/*.gcov
+	rm -f $(SERVERS_DIR)/*.o $(SERVERS_DIR)/*.gcda $(SERVERS_DIR)/*.gcno $(SERVERS_DIR)/*.gcov
