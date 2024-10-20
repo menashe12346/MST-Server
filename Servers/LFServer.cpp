@@ -335,21 +335,29 @@ int main() {
                     clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &addrLen);  // Accept new connection
                     if (clientSocket != -1) {
                         cout << "New connection on socket " << clientSocket << endl;
-                        pool.enqueue([clientSocket] {
-                            // Client handling in a separate thread from the thread pool
-                            char buffer[1024];
-                            memset(buffer, 0, 1024);  // Clear buffer
-                            while (true) {
-                                int nbytes = read(clientSocket, buffer, 1023);  // Read data from client
-                                if (nbytes > 0) {
-                                    Command cmd = {clientSocket, string(buffer)};
-                                    processCommand(cmd);  // Process client command
-                                } else {
-                                    close(clientSocket);  // Close the client socket on error or disconnect
-                                    break;
-                                }
+                        pool.enqueue(clientSocket, [clientSocket] {
+                        // Handling the client in a separate thread from the thread pool
+                        char buffer[1024];
+                        memset(buffer, 0, sizeof(buffer));  // Clear buffer
+
+                        // Process all commands from the client in the same thread
+                        while (true) {
+                            int nbytes = read(clientSocket, buffer, sizeof(buffer) - 1);  // Read data from the client
+                            if (nbytes > 0) {
+                                Command cmd = {clientSocket, string(buffer)};
+
+                                // Process the client command within the same thread
+                                processCommand(cmd);
+
+                                // Clear the buffer after each command to avoid residual data issues
+                                memset(buffer, 0, sizeof(buffer));
+                            } else {
+                                // Close the client socket on error or disconnect
+                                close(clientSocket);
+                                break;
                             }
-                        });
+                        }
+                    });
                     }
                 }
             }
@@ -359,3 +367,40 @@ int main() {
     close(serverSocket);  // Close server socket
     return 0;
 }
+
+/*
+Leader-Follower Pattern Implementation:
+
+1. **Adding a Task to the Queue**  
+   - Function: `enqueue(int graphId, function<void()> task)`  
+   - Adds a task to the queue, associating it with a graph identifier (`graphId`).
+   - The queue ensures that tasks related to the same graph are handled by only one thread at a time.
+
+2. **Thread Becomes the Leader and Picks a Task**  
+   - Function: `worker()`  
+   - One of the threads takes the first task from the queue and starts processing it as the Leader.
+
+3. **Locking the Graph by graphId**  
+   - Function: `worker()`  
+   - The thread checks if the graph with the given `graphId` is already locked.
+     If it is locked, the task is returned to the queue.  
+     If not, the thread locks the graph to prevent other threads from accessing it simultaneously.
+
+4. **Performing All Operations on the Same Graph**  
+   - Function: `processCommand(const Command& cmd)`  
+   - The thread performs all commands related to the graph in sequence without interruptions.
+
+5. **Releasing the Lock After the Task is Complete**  
+   - Function: `worker()`  
+   - Once the thread finishes processing the task, it releases the lock on the graph, allowing other threads to work on it if needed.
+
+6. **Waiting for New Tasks**  
+   - Function: `worker()`  
+   - After releasing the lock, the thread returns to wait for new tasks from the queue. If a new task arrives, the thread becomes the Leader again and handles it.
+
+Purpose of the Implementation:
+- **Prevents Conflicts**: Only one thread works on a specific graph at any given time.
+- **Improves Performance**: All operations on a graph are handled by the same thread, improving cache locality and minimizing context switching.
+- **Simplifies Task Management**: Tasks are organized in a queue, and the leading thread completes the entire task before releasing the graph for others.
+
+*/

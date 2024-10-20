@@ -13,11 +13,11 @@ ThreadPool::~ThreadPool() {
     stop(); // Ensure the thread pool is properly stopped and cleaned up
 }
 
-// Enqueue a new task
-void ThreadPool::enqueue(function<void()> task) {
+// Enqueue a new task with graphId to ensure leader-follower execution
+void ThreadPool::enqueue(int graphId, function<void()> task) {
     {
         unique_lock<mutex> lock(queueMutex); // Lock the queue to safely push the task
-        tasks.push(move(task)); // Move the task into the queue
+        tasks.push({graphId, move(task)});   // Push the task with its graphId
     }
     condition.notify_one(); // Notify one worker thread that a new task is available
 }
@@ -34,17 +34,41 @@ void ThreadPool::stop() {
     }
 }
 
-// Worker function
+// Worker function following the Leader-Follower pattern
 void ThreadPool::worker() {
     while (true) {
-        function<void()> task;
+        pair<int, function<void()>> task;
+
+        // Wait for a task to be available
         {
-            unique_lock<mutex> lock(queueMutex); // Lock the queue to wait for tasks
-            condition.wait(lock, [this] { return stopFlag || !tasks.empty(); }); // Wait until there is a task or stopFlag is true
-            if (stopFlag && tasks.empty()) return; // Exit if stopping and no tasks left
-            task = move(tasks.front()); // Get the next task from the queue
+            unique_lock<mutex> lock(queueMutex);
+            condition.wait(lock, [this] { return stopFlag || !tasks.empty(); });
+
+            if (stopFlag && tasks.empty()) return; // Exit if stopFlag is set and no tasks are left
+
+            task = move(tasks.front()); // Retrieve the task from the queue
             tasks.pop(); // Remove the task from the queue
         }
-        task(); // Execute the task
+
+        int graphId = task.first;
+
+        // Ensure only one thread processes the same graph
+        {
+            unique_lock<mutex> lock(queueMutex);
+            if (graphLocks[graphId]) {
+                tasks.push(move(task)); // Return task to the queue if graph is locked
+                continue;
+            }
+            graphLocks[graphId] = true; // Lock the graph for the current thread
+        }
+
+        // Execute the task
+        task.second();
+
+        // Release the lock on the graph
+        {
+            unique_lock<mutex> lock(queueMutex);
+            graphLocks[graphId] = false; // Unlock the graph for other threads
+        }
     }
 }

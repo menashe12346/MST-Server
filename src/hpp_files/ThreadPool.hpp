@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <functional>
 #include <atomic>
+#include <unordered_map>
 
 using namespace std;
 
@@ -32,7 +33,7 @@ public:
      * Method to enqueue a task into the thread pool.
      * @param task - A function representing the task to be executed.
      */
-    void enqueue(function<void()> task);
+    void enqueue(int graphId, function<void()> task);
 
     /**
      * Method to stop all threads in the pool.
@@ -42,8 +43,8 @@ public:
 
 private:
     vector<thread> workers;  // Vector to hold worker threads
-    queue<function<void()>> tasks;  // Task queue to hold pending tasks
-
+    queue<pair<int, function<void()>>> tasks;  // Task queue with graphId and task function
+    unordered_map<int, bool> graphLocks;  // Track which graph is locked by which thread
     mutex queueMutex;  // Mutex to ensure thread-safe access to the task queue
     condition_variable condition;  // Condition variable to notify worker threads of new tasks
     atomic<bool> stopFlag;  // Flag to indicate whether the thread pool should stop

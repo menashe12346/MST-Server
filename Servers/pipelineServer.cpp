@@ -1,9 +1,7 @@
 #include <iostream>
 #include <vector>
-#include <list>
 #include <string>
-#include <cstring>
-#include <algorithm>
+#include <functional>  // For std::function
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -14,6 +12,7 @@
 #include <sys/socket.h>
 #include <sys/select.h>
 #include <sstream>
+#include <cstring>  // For bzero
 #include "../src/hpp_files/Graph.hpp"
 #include "../src/hpp_files/KruskalMST.hpp"
 #include "../src/hpp_files/PrimMST.hpp"
@@ -21,166 +20,224 @@
 
 using namespace std;
 
-// Global Variables
-mutex graphMutex; // Mutex to synchronize access to the graph
-Graph* graph = nullptr; // Pointer to the current graph instance
-Tree* mstTree = nullptr; // Pointer to the current MST Tree instance
-
-// Command structure for client requests
+// Structure to represent a client command
 struct Command {
     int clientSocket;
     string command;
 };
 
-// Queue to hold incoming commands and associated synchronization
+// ActiveObject class manages a thread to process tasks asynchronously.
+class ActiveObject {
+public:
+    using Task = std::function<void()>;
+
+    ActiveObject() : stopFlag(false), workerThread(&ActiveObject::run, this) {}
+
+    ~ActiveObject() {
+        stop();
+        workerThread.join();
+    }
+
+    // Submit a new task to the active object
+    void submit(Task task) {
+        unique_lock<mutex> lock(queueMutex);
+        taskQueue.push(move(task));
+        condition.notify_one();
+    }
+
+private:
+    queue<Task> taskQueue;
+    mutex queueMutex;
+    condition_variable condition;
+    bool stopFlag;
+    thread workerThread;
+
+    // The run function continuously processes tasks from the queue
+    void run() {
+        while (true) {
+            Task task;
+            {
+                unique_lock<mutex> lock(queueMutex);
+                condition.wait(lock, [this] { return stopFlag || !taskQueue.empty(); });
+                if (stopFlag && taskQueue.empty()) break;
+                task = move(taskQueue.front());
+                taskQueue.pop();
+            }
+            task();  // Execute the task
+        }
+    }
+
+    // Stop the active object by setting the stop flag
+    void stop() {
+        unique_lock<mutex> lock(queueMutex);
+        stopFlag = true;
+        condition.notify_all();
+    }
+};
+
+// Global variables for thread synchronization and task management
+mutex graphMutex;  
+mutex queueMutex;
+condition_variable queueCondition;
 queue<Command> commandQueue;
-mutex queueMutex; // Mutex to synchronize access to the command queue
-condition_variable queueCondition; // Condition variable to signal new commands
 
-// Function to process commands sent by clients
-void processCommand(const Command& cmd) {
-    string response;
-    static int edgesToReceive = 0; // Number of edges to be received
-    static vector<pair<pair<int, int>, double>> edges; // Vector to store the edges of the graph
+// Pointers to the graph and MST tree
+Graph* graph = nullptr;
+Tree* mstTree = nullptr;
 
-    const string& command = cmd.command; // Command received from client
+// ActiveObjects for different pipeline stages
+ActiveObject commandParser, graphOperator, responseHandler;
+
+void sendResponse(int clientSocket, const std::string& response) {
+    write(clientSocket, response.c_str(), response.size());
+}
+
+// Function to parse a command and pass it to the appropriate pipeline stage
+void handleCommand(const Command& cmd) {
+    string response;  // Response to send back to the client
+    static int edgesToReceive = 0;  // Number of edges to receive for graph creation
+    static vector<pair<pair<int, int>, double>> edges;  // Vector to store edges with weights
+
+    const string& command = cmd.command;  // Command extracted from the client request
 
     if (command.find("NewGraph") == 0) {
         // Command to create a new graph
         int n, m;
         sscanf(command.c_str(), "NewGraph %d %d", &n, &m);
-        edgesToReceive = m;
-        edges.clear(); // Clear the current list of edges
-        edges.resize(m); // Resize the edges vector to hold m edges
-
-        // Prepare the response message
+        edgesToReceive = m;  // Set the number of edges expected
+        edges.clear();
+        edges.resize(m);  // Resize edges vector to match the number of edges
         response = "Creating new graph...\n";
         response += "Number of vertices: " + to_string(n) + ", Number of edges: " + to_string(m) + "\n";
         response += "Please provide the edges one by one (format: u v weight):\n";
 
     } else if (edgesToReceive > 0) {
-        // Expecting to receive the edges
+        // Expecting edges to complete the graph creation
         int u, v;
         double weight;
         if (sscanf(command.c_str(), "%d %d %lf", &u, &v, &weight) == 3) {
-            // Check that vertex numbers are valid
-            if (u > 0 && v > 0 && (u <= static_cast<int>(edges.size() + 1)) && (v <= static_cast<int>(edges.size() + 1))) {
+            // Ensure valid vertex numbers
+            if (u > 0 && v > 0) {
                 edges[edges.size() - edgesToReceive] = {{u, v}, weight};
-                edgesToReceive--; // Decrement the number of edges to receive
+                response = "Edge " + to_string(edges.size() - edgesToReceive + 1) +
+                           ": " + to_string(u) + " -> " + to_string(v) + " with weight " + to_string(weight) + "\n";
+                edgesToReceive--;
 
-                response = "Edge " + to_string(edges.size() - edgesToReceive) + ": " + to_string(u) + " -> " + to_string(v) + " with weight " + to_string(weight) + "\n";
-
-                // If all edges have been received, create the graph
                 if (edgesToReceive == 0) {
-                    graphMutex.lock();
-                    delete graph; // Delete the current graph if it exists
-                    graph = new Graph(edges.size(), edges); // Create a new graph with the provided edges
-                    graphMutex.unlock();
-
+                    // All edges received, create the graph
+                    lock_guard<mutex> lock(graphMutex);
+                    delete graph;  // Delete any existing graph
+                    graph = new Graph(edges.size(), edges);  // Create a new graph
                     response += "Graph created successfully with " + to_string(edges.size()) + " edges\n";
 
-                    // Print the graph structure
+                    // Capture and send the graph structure
                     stringstream ss;
-                    streambuf* coutbuf = cout.rdbuf(); // Save old buffer
-                    cout.rdbuf(ss.rdbuf()); // Redirect cout to stringstream
-                    graph->printGraph(); // Print the graph
-                    cout.rdbuf(coutbuf); // Restore cout to original buffer
+                    streambuf* coutbuf = cout.rdbuf();
+                    cout.rdbuf(ss.rdbuf());
+                    graph->printGraph();
+                    cout.rdbuf(coutbuf);
                     response += ss.str();
                 }
             } else {
-                response = "Invalid edge input. Ensure vertices are within the correct range.\n";
+                response = "Invalid edge input. Ensure vertices are in range.\n";
             }
         } else {
-            response = "Invalid edge format. Please use: u v weight\n";
+            response = "Invalid edge format. Use: u v weight\n";
         }
+
     } else if (command.find("NewEdge") == 0) {
-        // Command to add a new edge
+        // Command to add a new edge to the graph
         int u, v;
         double weight;
         if (sscanf(command.c_str(), "NewEdge %d %d %lf", &u, &v, &weight) == 3) {
-            graphMutex.lock();
+            lock_guard<mutex> lock(graphMutex);
             if (graph) {
-                graph->addEdge(u, v, weight); // Add the new edge to the graph
-                response = "Edge added successfully: " + to_string(u) + " -> " + to_string(v) + " with weight " + to_string(weight) + "\n";
+                graph->addEdge(u, v, weight);  // Add the edge to the graph
+                response = "Edge added successfully: " + to_string(u) + " -> " + to_string(v) +
+                           " with weight " + to_string(weight) + "\n";
             } else {
                 response = "Graph is not initialized.\n";
             }
-            graphMutex.unlock();
         } else {
             response = "Invalid NewEdge command format. Use: NewEdge u v weight\n";
         }
+
     } else if (command.find("RemoveEdge") == 0) {
-        // Command to remove an edge
+        // Command to remove an edge from the graph
         int u, v;
         if (sscanf(command.c_str(), "RemoveEdge %d %d", &u, &v) == 2) {
-            graphMutex.lock();
+            lock_guard<mutex> lock(graphMutex);
             if (graph) {
-                graph->removeEdge(u, v); // Remove the edge from the graph
+                graph->removeEdge(u, v);  // Remove the edge
                 response = "Edge removed successfully: " + to_string(u) + " -> " + to_string(v) + "\n";
             } else {
                 response = "Graph is not initialized.\n";
             }
-            graphMutex.unlock();
         } else {
             response = "Invalid RemoveEdge command format. Use: RemoveEdge u v\n";
         }
+
     } else if (command.find("Kruskal") == 0) {
-        // Command to execute Kruskal's MST algorithm
-        graphMutex.lock();
+        // Command to run Kruskal's algorithm
+        lock_guard<mutex> lock(graphMutex);
         if (graph) {
-            KruskalMST kruskalMST(*graph); // Create an instance of Kruskal's algorithm
-            double mstWeight = kruskalMST.findMST(); // Compute the MST weight
+            KruskalMST kruskalMST(*graph);  // Initialize KruskalMST
+            double mstWeight = kruskalMST.findMST();  // Calculate MST weight
             response = "Kruskal's algorithm executed. MST Weight: " + to_string(mstWeight) + "\n";
 
-            // Store the MST edges in a tree
+            // Store the MST in the tree
             if (mstTree) delete mstTree;
             mstTree = new Tree(graph->getNumNodes(), kruskalMST.getMSTEdges());
 
             response += "Edges of the MST:\n";
             for (const auto& edge : kruskalMST.getMSTEdges()) {
-                response += to_string(edge.first.first) + " -> " + to_string(edge.first.second) + " (Weight: " + to_string(edge.second) + ")\n";
+                response += to_string(edge.first.first) + " -> " + to_string(edge.first.second) +
+                           " (Weight: " + to_string(edge.second) + ")\n";
             }
         } else {
             response = "Graph is not initialized.\n";
         }
-        graphMutex.unlock();
+
     } else if (command.find("Prim") == 0) {
-        // Command to execute Prim's MST algorithm
-        graphMutex.lock();
+        // Command to run Prim's algorithm
+        lock_guard<mutex> lock(graphMutex);
         if (graph) {
-            PrimMST primMST(*graph); // Create an instance of Prim's algorithm
-            double mstWeight = primMST.findMST(); // Compute the MST weight
+            PrimMST primMST(*graph);  // Initialize PrimMST
+            double mstWeight = primMST.findMST();  // Calculate MST weight
             response = "Prim's algorithm executed. MST Weight: " + to_string(mstWeight) + "\n";
 
-            // Store the MST edges in a tree
+            // Store the MST in the tree
             if (mstTree) delete mstTree;
             mstTree = new Tree(graph->getNumNodes(), primMST.getMSTEdges());
 
             response += "Edges of the MST:\n";
             for (const auto& edge : primMST.getMSTEdges()) {
-                response += to_string(edge.first.first) + " -> " + to_string(edge.first.second) + " (Weight: " + to_string(edge.second) + ")\n";
+                response += to_string(edge.first.first) + " -> " + to_string(edge.first.second) +
+                           " (Weight: " + to_string(edge.second) + ")\n";
             }
         } else {
             response = "Graph is not initialized.\n";
         }
-        graphMutex.unlock();
+
     } else if (command.find("MSTWeight") == 0) {
-        // Command to get the total weight of the MST
+        // Command to return the total weight of the MST
         if (mstTree) {
             double mstWeight = mstTree->getMSTWeight();
             response = "Total MST Weight: " + to_string(mstWeight) + "\n";
         } else {
             response = "MST not calculated. Run Prim or Kruskal first.\n";
         }
+
     } else if (command.find("LongestDistance") == 0) {
-        // Command to find the longest distance in the MST between two vertices
+        // Command to calculate the longest distance between two vertices
         int u, v;
         if (sscanf(command.c_str(), "LongestDistance %d %d", &u, &v) == 2) {
             if (mstTree) {
                 double distance = mstTree->longestDistance(u, v);
                 if (distance >= 0) {
-                    response = "Longest Distance between " + to_string(u) + " and " + to_string(v) + " is: " + to_string(distance) + "\n";
-                    
+                    response = "Longest Distance between " + to_string(u) + " and " + to_string(v) +
+                               " is: " + to_string(distance) + "\n";
+
                     // Get the longest path
                     vector<int> path = mstTree->getLongestPath(u, v);
                     stringstream ss;
@@ -200,18 +257,20 @@ void processCommand(const Command& cmd) {
         } else {
             response = "Invalid LongestDistance command format. Use: LongestDistance u v\n";
         }
+
     } else if (command.find("AverageDistance") == 0) {
-        // Command to find the average distance between two vertices using Floyd-Warshall
+        // Command to calculate the average distance between two vertices using Floyd-Warshall
         int u, v;
         if (sscanf(command.c_str(), "AverageDistance %d %d", &u, &v) == 2) {
             if (mstTree) {
-                auto [dist, next] = mstTree->floydWarshall();
+                auto [dist, next] = mstTree->floydWarshall();  // Run Floyd-Warshall algorithm
                 double distance = dist[u][v];
+
                 if (distance < numeric_limits<double>::infinity()) {
                     response = "AverageDistance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
 
                     vector<int> path;
-                    mstTree->reconstructPath(u, v, next, path);
+                    mstTree->reconstructPath(u, v, next, path);  // Reconstruct the path
 
                     response += "Path from " + to_string(u) + " to " + to_string(v) + ": ";
                     for (size_t i = 0; i < path.size(); ++i) {
@@ -228,16 +287,19 @@ void processCommand(const Command& cmd) {
         } else {
             response = "Invalid AverageDistance command format. Use: AverageDistance u v\n";
         }
+
     } else if (command.find("ShortestPath") == 0) {
-        // Command to find the shortest path between two vertices using Floyd-Warshall
+        // Command to calculate the shortest path between two vertices
         int u, v;
         if (sscanf(command.c_str(), "ShortestPath %d %d", &u, &v) == 2) {
             if (mstTree) {
-                auto [dist, next] = mstTree->floydWarshall();
+                auto [dist, next] = mstTree->floydWarshall();  // Run Floyd-Warshall algorithm
                 double distance = dist[u][v];
+
                 if (distance < numeric_limits<double>::infinity()) {
                     response = "Shortest Distance between " + to_string(u) + " and " + to_string(v) + ": " + to_string(distance) + "\n";
 
+                    // Reconstruct the shortest path
                     vector<int> path;
                     mstTree->reconstructPath(u, v, next, path);
 
@@ -256,9 +318,10 @@ void processCommand(const Command& cmd) {
         } else {
             response = "Invalid ShortestPath command format. Use: ShortestPath u v\n";
         }
+
     } else if (command.find("PrintGraph") == 0) {
         // Command to print the current graph structure
-        graphMutex.lock();
+        lock_guard<mutex> lock(graphMutex);
         if (graph) {
             stringstream ss;
             streambuf* coutbuf = cout.rdbuf();
@@ -266,35 +329,44 @@ void processCommand(const Command& cmd) {
             graph->printGraph();
             cout.rdbuf(coutbuf);
             response = ss.str();
+        } else {
+            response = "Graph is not initialized.\n";
         }
-        graphMutex.unlock();
+
     } else if (command.find("exit") == 0) {
         // Command to exit the server
         response = "Exiting...\n";
+
     } else {
-        // Invalid command received
-        response = "Invalid command\n";
+        response = "Invalid command\n";  // Invalid command received
     }
 
-    // Send the response to the client
-    write(cmd.clientSocket, response.c_str(), response.size());
+    responseHandler.submit([cmd, response] {
+        sendResponse(cmd.clientSocket, response);  // העברת התשובה לשלב הבא
+    });
 }
 
-// Worker thread to process incoming commands
+void parseCommand(const Command& cmd) {
+    graphOperator.submit([cmd] {
+        handleCommand(cmd);  // העברת הפקודה לשלב הבא
+    });
+}
+
+// Worker thread function to process commands from the queue
 void workerThread() {
     while (true) {
         Command cmd;
         {
             unique_lock<mutex> lock(queueMutex);
-            queueCondition.wait(lock, [] { return !commandQueue.empty(); }); // Wait until a command is available
-            cmd = commandQueue.front(); // Get the next command
-            commandQueue.pop(); // Remove the command from the queue
+            queueCondition.wait(lock, [] { return !commandQueue.empty(); });
+            cmd = commandQueue.front();
+            commandQueue.pop();
         }
-        processCommand(cmd); // Process the command
+        commandParser.submit([cmd] { parseCommand(cmd); });
     }
 }
 
-// Main function to start the server
+// Main function to set up the server and handle incoming connections
 int main() {
     int serverSocket, clientSocket;
     struct sockaddr_in serverAddr, clientAddr;
@@ -302,27 +374,22 @@ int main() {
     fd_set masterSet, readSet;
     int fdMax;
 
-    // Create a socket for the server
+    // Create the server socket
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (serverSocket < 0) {
         cerr << "Error opening socket" << endl;
         return 1;
     }
 
-    // Set socket options to reuse the address
     int opt = 1;
-    if (setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
-        cerr << "Error setting socket options" << endl;
-        return 1;
-    }
+    setsockopt(serverSocket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 
-    // Initialize the server address structure
     bzero((char*)&serverAddr, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY; // Accept connections on all interfaces
-    serverAddr.sin_port = htons(9034); // Set the port to 9034
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(9034);
 
-    // Bind the server socket to the address
+    // Bind the socket to the specified port
     if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
         cerr << "Error on binding" << endl;
         return 1;
@@ -332,71 +399,70 @@ int main() {
     listen(serverSocket, 1);
     cout << "Server started on port 9034" << endl;
 
-    // Initialize file descriptor sets for select
     FD_ZERO(&masterSet);
-    FD_ZERO(&readSet);
-
-    FD_SET(serverSocket, &masterSet); // Add the server socket to the master set
+    FD_SET(serverSocket, &masterSet);
     fdMax = serverSocket;
 
-    // Start the worker thread to process commands
+    // Start the worker thread
     thread worker(workerThread);
-    worker.detach(); // Detach the thread to allow it to run independently
+    worker.detach();
 
-    // Main loop to accept and process incoming connections
+    // Main server loop to handle connections and commands
     while (true) {
         readSet = masterSet;
-
-        // Use select to monitor file descriptors for activity
         if (select(fdMax + 1, &readSet, nullptr, nullptr, nullptr) == -1) {
             cerr << "Error on select" << endl;
             return 1;
         }
 
-        // Check each file descriptor for activity
         for (int i = 0; i <= fdMax; ++i) {
             if (FD_ISSET(i, &readSet)) {
                 if (i == serverSocket) {
-                    // Accept a new connection
                     clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &addrLen);
                     if (clientSocket == -1) {
                         cerr << "Error on accept" << endl;
                     } else {
-                        FD_SET(clientSocket, &masterSet); // Add the new socket to the master set
+                        FD_SET(clientSocket, &masterSet);
                         if (clientSocket > fdMax) {
                             fdMax = clientSocket;
                         }
                         cout << "New connection on socket " << clientSocket << endl;
                     }
                 } else {
-                    // Handle data from an existing connection
                     char buffer[1024];
-                    bzero(buffer, 1024); // Clear the buffer
+                    bzero(buffer, 1024);
                     int nbytes = read(i, buffer, 1023);
                     if (nbytes <= 0) {
-                        // Connection closed or error
                         if (nbytes == 0) {
                             cout << "Socket " << i << " hung up" << endl;
                         } else {
                             cerr << "Error on read" << endl;
                         }
-                        close(i); // Close the socket
-                        FD_CLR(i, &masterSet); // Remove it from the master set
+                        close(i);
+                        FD_CLR(i, &masterSet);
                     } else {
-                        // Create a command from the received data
-                        Command cmd{clientSocket, string(buffer)};
+                        Command cmd{i, string(buffer)};
                         {
                             unique_lock<mutex> lock(queueMutex);
-                            commandQueue.push(cmd); // Add the command to the queue
+                            commandQueue.push(cmd);
                         }
-                        queueCondition.notify_one(); // Notify the worker thread
+                        queueCondition.notify_one();
                     }
                 }
             }
         }
     }
 
-    // Close the server socket before exiting
     close(serverSocket);
     return 0;
 }
+
+/**
+ * Pipeline Design Pattern Implementation:
+ * 
+ * - Client sends a command – The server receives the command and pushes it to the command queue.
+ * - workerThread retrieves a command from the queue and passes it to commandParser.
+ * - commandParser interprets the command and forwards it to graphOperator for processing.
+ * - graphOperator performs the requested operation and sends the result to responseHandler.
+ * - responseHandler sends the response back to the client.
+ */
