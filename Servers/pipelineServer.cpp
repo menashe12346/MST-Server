@@ -342,13 +342,13 @@ void handleCommand(const Command& cmd) {
     }
 
     responseHandler.submit([cmd, response] {
-        sendResponse(cmd.clientSocket, response);  // העברת התשובה לשלב הבא
+        sendResponse(cmd.clientSocket, response);     //passing the response to  the next stage
     });
 }
 
 void parseCommand(const Command& cmd) {
     graphOperator.submit([cmd] {
-        handleCommand(cmd);  // העברת הפקודה לשלב הבא
+        handleCommand(cmd);   //passing the response to  the next stage
     });
 }
 

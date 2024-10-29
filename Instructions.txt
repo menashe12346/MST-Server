@@ -1,0 +1,27 @@
+run the server:
+                ./Servers/LFServer
+                ./Servers/pipelineServer
+            
+run the client:
+                ./Client/client
+        
+Available commands:
+                    1) NewGraph 5 5
+                                1 2
+                                2 3
+                                3 4
+                                4 5
+                                5 1
+                    2) NewEdge 1 3
+                    3) RemoveEdge 3 4
+                    4) Kruskal
+                    5) Prim
+                    6) MSTWeight
+                    7) LongestDistance 2 4
+                    8) AverageDistance 2 5
+                    9) ShortestPath 3 1
+                    10) PrintGraph
+                    11) exit
+                    12) help
+
+
